@@ -1,0 +1,63 @@
+package com.biteco.reports.security;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.services.kms.KmsClient;
+import software.amazon.awssdk.services.kms.model.DecryptRequest;
+import software.amazon.awssdk.services.kms.model.EncryptRequest;
+
+@Service
+public class AwsKmsEncryptionService {
+    
+    private final KmsClient kmsClient;
+    private final String keyId;
+    
+    public AwsKmsEncryptionService(KmsClient kmsClient, 
+                                   @Value("${aws.kms.key-id}") String keyId) {
+        this.kmsClient = kmsClient;
+        this.keyId = keyId;
+    }
+    
+    public String encrypt(String plaintext) {
+        try {
+            if (plaintext == null) {
+                plaintext = "";
+            }
+            
+            EncryptRequest encryptRequest = EncryptRequest.builder()
+                    .keyId(keyId)
+                    .plaintext(SdkBytes.fromString(plaintext, StandardCharsets.UTF_8))
+                    .build();
+            
+            SdkBytes encryptedBytes = kmsClient.encrypt(encryptRequest).ciphertextBlob();
+            return Base64.getEncoder().encodeToString(encryptedBytes.asByteArray());
+        } catch (Exception e) {
+            throw new RuntimeException("AWS KMS encryption failed", e);
+        }
+    }
+    
+    public String decrypt(String encryptedBase64) {
+        try {
+            if (encryptedBase64 == null || encryptedBase64.isEmpty()) {
+                return "";
+            }
+            
+            byte[] encryptedBytes = Base64.getDecoder().decode(encryptedBase64);
+            
+            DecryptRequest decryptRequest = DecryptRequest.builder()
+                    .keyId(keyId)
+                    .ciphertextBlob(SdkBytes.fromByteArray(encryptedBytes))
+                    .build();
+            
+            SdkBytes decryptedBytes = kmsClient.decrypt(decryptRequest).plaintext();
+            return decryptedBytes.asString(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("AWS KMS decryption failed", e);
+        }
+    }
+}
